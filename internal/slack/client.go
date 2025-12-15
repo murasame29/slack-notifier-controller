@@ -40,7 +40,6 @@ func (c *slackClient) Send(ctx context.Context, webhookURL string, token string,
 	}
 
 	attachment := slack.Attachment{
-		Title:  title,
 		Color:  color, // Valid values: "good", "warning", "danger", or hex
 		Fields: fields,
 	}
@@ -56,13 +55,13 @@ func (c *slackClient) Send(ctx context.Context, webhookURL string, token string,
 		options := []slack.MsgOption{
 			slack.MsgOptionAttachments(attachment),
 		}
-		// Fallback text for notifications
-		// Fallback text for notifications
-		fallbackText := "Kubernetes Notification"
+
+		// Use Title as the main message text
+		mainText := "Kubernetes Notification"
 		if title != "" {
-			fallbackText = title
+			mainText = title
 		}
-		options = append(options, slack.MsgOptionText(fallbackText, false))
+		options = append(options, slack.MsgOptionText(mainText, false))
 
 		_, _, err := api.PostMessageContext(ctx, channel, options...)
 		if err != nil {
@@ -76,6 +75,12 @@ func (c *slackClient) Send(ctx context.Context, webhookURL string, token string,
 		msg := &slack.WebhookMessage{
 			Attachments: []slack.Attachment{attachment},
 		}
+		if title != "" {
+			msg.Text = title
+		} else {
+			msg.Text = "Kubernetes Notification"
+		}
+
 		if channel != "" {
 			msg.Channel = channel
 		}
