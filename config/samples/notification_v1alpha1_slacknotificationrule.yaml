@@ -1,0 +1,9 @@
+apiVersion: notification.murasame29.com/v1alpha1
+kind: SlackNotificationRule
+metadata:
+  labels:
+    app.kubernetes.io/name: slack-notifier-controller
+    app.kubernetes.io/managed-by: kustomize
+  name: slacknotificationrule-sample
+spec:
+  # TODO(user): Add fields here

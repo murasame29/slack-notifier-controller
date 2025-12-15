@@ -1,0 +1,61 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: manager-role
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - secrets
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - argoproj.io
+  resources:
+  - cronworkflows
+  - workflows
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - batch
+  resources:
+  - cronjobs
+  - jobs
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - notification.murasame29.com
+  resources:
+  - slackconfigs
+  - slacknotificationrules
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - notification.murasame29.com
+  resources:
+  - slackconfigs/finalizers
+  - slacknotificationrules/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - notification.murasame29.com
+  resources:
+  - slackconfigs/status
+  - slacknotificationrules/status
+  verbs:
+  - get
+  - patch
+  - update
