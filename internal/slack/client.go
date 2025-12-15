@@ -11,7 +11,7 @@ import (
 )
 
 type Client interface {
-	Send(ctx context.Context, webhookURL string, token string, channel string, messageTmpl string, color string, data any) error
+	Send(ctx context.Context, webhookURL string, token string, channel string, titleTmpl string, messageTmpl string, color string, data any) error
 }
 
 type slackClient struct {
@@ -24,21 +24,41 @@ func NewClient() Client {
 	}
 }
 
-func (c *slackClient) Send(ctx context.Context, webhookURL string, token string, channel string, messageTmpl string, color string, data any) error {
+func (c *slackClient) Send(ctx context.Context, webhookURL string, token string, channel string, titleTmpl string, messageTmpl string, color string, data any) error {
 	// Render message
-	tmpl, err := template.New("msg").Parse(messageTmpl)
+	tmplMsg, err := template.New("msg").Parse(messageTmpl)
 	if err != nil {
 		return fmt.Errorf("failed to parse message template: %w", err)
 	}
 	var msgBuf bytes.Buffer
-	if err := tmpl.Execute(&msgBuf, data); err != nil {
+	if err := tmplMsg.Execute(&msgBuf, data); err != nil {
 		return fmt.Errorf("failed to execute message template: %w", err)
 	}
 	message := msgBuf.String()
 
+	// Render title
+	title := ""
+	if titleTmpl != "" {
+		tmplTitle, err := template.New("title").Parse(titleTmpl)
+		if err != nil {
+			return fmt.Errorf("failed to parse title template: %w", err)
+		}
+		var titleBuf bytes.Buffer
+		if err := tmplTitle.Execute(&titleBuf, data); err != nil {
+			return fmt.Errorf("failed to execute title template: %w", err)
+		}
+		title = titleBuf.String()
+	}
+
 	attachment := slack.Attachment{
-		Text:  message,
+		Title: title,
 		Color: color, // Valid values: "good", "warning", "danger", or hex
+		Fields: []slack.AttachmentField{
+			{
+				Value: message,
+				Short: false,
+			},
+		},
 	}
 
 	// Send via Token (API)

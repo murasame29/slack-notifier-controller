@@ -137,7 +137,7 @@ func (n *Notifier) ResolveAndSend(ctx context.Context, rule notificationv1alpha1
 		}
 	}
 
-	return n.SlackClient.Send(ctx, webhookURL, token, channel, note.Message, color, unstructuredData)
+	return n.SlackClient.Send(ctx, webhookURL, token, channel, note.Title, note.Message, color, unstructuredData)
 }
 
 func (n *Notifier) getSecretValue(ctx context.Context, namespace string, ref *corev1.SecretKeySelector) (string, error) {

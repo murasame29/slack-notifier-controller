@@ -44,6 +44,10 @@ type NotificationRule struct {
 	// Status is the resource status that triggers the notification (e.g., Running, Succeeded, Failed).
 	Status string `json:"status"`
 
+	// Title is the title template to send.
+	// +optional
+	Title string `json:"title,omitempty"`
+
 	// Message is the message template to send.
 	Message string `json:"message"`
 

@@ -104,6 +104,9 @@ spec:
                       description: Status is the resource status that triggers the
                         notification (e.g., Running, Succeeded, Failed).
                       type: string
+                    title:
+                      description: Title is the title template to send.
+                      type: string
                   required:
                   - message
                   - status
