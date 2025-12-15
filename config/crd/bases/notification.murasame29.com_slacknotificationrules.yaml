@@ -93,6 +93,10 @@ spec:
                     channel:
                       description: Channel overrides the default channel in SlackConfig.
                       type: string
+                    color:
+                      description: Color specifies the attachment color (e.g., "good",
+                        "warning", "danger", "#ff0000").
+                      type: string
                     message:
                       description: Message is the message template to send.
                       type: string

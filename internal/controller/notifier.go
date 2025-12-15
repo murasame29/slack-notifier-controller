@@ -8,6 +8,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -116,7 +117,27 @@ func (n *Notifier) ResolveAndSend(ctx context.Context, rule notificationv1alpha1
 		channel = note.Channel
 	}
 
-	return n.SlackClient.Send(ctx, webhookURL, token, channel, note.Message, data)
+	// Convert to Unstructured map for template
+	unstructuredData, err := runtime.DefaultUnstructuredConverter.ToUnstructured(data)
+	if err != nil {
+		return fmt.Errorf("failed to convert object to unstructured: %w", err)
+	}
+
+	// Determine Color
+	color := note.Color
+	if color == "" {
+		// Default colors based on Status
+		switch strings.ToLower(note.Status) {
+		case "succeeded", "running":
+			color = "good" // Green
+		case "failed", "error":
+			color = "danger" // Red
+		default:
+			color = "warning" // Orange
+		}
+	}
+
+	return n.SlackClient.Send(ctx, webhookURL, token, channel, note.Message, color, unstructuredData)
 }
 
 func (n *Notifier) getSecretValue(ctx context.Context, namespace string, ref *corev1.SecretKeySelector) (string, error) {

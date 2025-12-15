@@ -47,6 +47,10 @@ type NotificationRule struct {
 	// Message is the message template to send.
 	Message string `json:"message"`
 
+	// Color specifies the attachment color (e.g., "good", "warning", "danger", "#ff0000").
+	// +optional
+	Color string `json:"color,omitempty"`
+
 	// Channel overrides the default channel in SlackConfig.
 	// +optional
 	Channel string `json:"channel,omitempty"`

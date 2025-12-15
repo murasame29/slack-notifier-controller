@@ -1,0 +1,18 @@
+display_information:
+  name: Kubernetes Notifier
+  description: Notifies Kubernetes CronJob/CronWorkflow status
+  background_color: "#36C5F0"
+features:
+  bot_user:
+    display_name: K8s Notifier
+    always_online: true
+oauth_config:
+  scopes:
+    bot:
+      - chat:write
+      - chat:write.public
+      - incoming-webhooks
+settings:
+  org_deploy_enabled: false
+  socket_mode_enabled: false
+  token_rotation_enabled: false

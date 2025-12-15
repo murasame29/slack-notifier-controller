@@ -1,5 +1,14 @@
-# slack-notifier-controller
-// TODO(user): Add simple overview of use/purpose
+# Slack Notifier Controller
+Kubernetes controller to notify Slack about CronJob and CronWorkflow status.
+
+## Slack App Setup
+To use this controller with a Slack App (Token authentication), create an App using the provided manifest:
+1. Go to [Slack Apps](https://api.slack.com/apps).
+2. Click "Create New App" > "From an app manifest".
+3. Select your workspace.
+4. Copy the content of [slack-app-manifest.yaml](slack-app-manifest.yaml) and paste it (YAML format).
+5. Install the App to your workspace.
+6. Copy the "Bot User OAuth Token" (starts with `xoxb-`) and create a Secret.
 
 ## Description
 // TODO(user): An in-depth paragraph about your project and overview of use

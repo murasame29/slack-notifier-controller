@@ -11,7 +11,7 @@ import (
 )
 
 type Client interface {
-	Send(ctx context.Context, webhookURL string, token string, channel string, messageTmpl string, data any) error
+	Send(ctx context.Context, webhookURL string, token string, channel string, messageTmpl string, color string, data any) error
 }
 
 type slackClient struct {
@@ -24,7 +24,7 @@ func NewClient() Client {
 	}
 }
 
-func (c *slackClient) Send(ctx context.Context, webhookURL string, token string, channel string, messageTmpl string, data any) error {
+func (c *slackClient) Send(ctx context.Context, webhookURL string, token string, channel string, messageTmpl string, color string, data any) error {
 	// Render message
 	tmpl, err := template.New("msg").Parse(messageTmpl)
 	if err != nil {
@@ -36,15 +36,26 @@ func (c *slackClient) Send(ctx context.Context, webhookURL string, token string,
 	}
 	message := msgBuf.String()
 
+	attachment := slack.Attachment{
+		Text:  message,
+		Color: color, // Valid values: "good", "warning", "danger", or hex
+	}
+
 	// Send via Token (API)
 	if token != "" {
 		api := slack.New(token)
-		// If channel is not provided, we cannot send via API easily unless we know the default,
-		// but usually explicit channel is good.
+		// If channel is not provided, we must fail or rely on default
 		if channel == "" {
 			return fmt.Errorf("channel is required when using token authentication")
 		}
-		_, _, err := api.PostMessageContext(ctx, channel, slack.MsgOptionText(message, false))
+
+		options := []slack.MsgOption{
+			slack.MsgOptionAttachments(attachment),
+		}
+		// Fallback text for notifications
+		options = append(options, slack.MsgOptionText(message, false))
+
+		_, _, err := api.PostMessageContext(ctx, channel, options...)
 		if err != nil {
 			return fmt.Errorf("failed to post message to slack via API: %w", err)
 		}
@@ -54,7 +65,7 @@ func (c *slackClient) Send(ctx context.Context, webhookURL string, token string,
 	// Send via Webhook
 	if webhookURL != "" {
 		msg := &slack.WebhookMessage{
-			Text: message,
+			Attachments: []slack.Attachment{attachment},
 		}
 		if channel != "" {
 			msg.Channel = channel
