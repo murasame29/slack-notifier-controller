@@ -66,7 +66,7 @@ func (r *CronWorkflowReconciler) Reconcile(ctx context.Context, req ctrl.Request
 
 func (r *CronWorkflowReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	r.Notifier = &Notifier{
-		Client:      r.Client,
+		Client:      mgr.GetClient(), // Initialize Notifier's Client with the manager's client
 		SlackClient: slack.NewClient(),
 	}
 	// Note: You must register argov1alpha1 Scheme in main.go

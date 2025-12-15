@@ -93,13 +93,6 @@ spec:
                     channel:
                       description: Channel overrides the default channel in SlackConfig.
                       type: string
-                    color:
-                      description: Color specifies the attachment color (e.g., "good",
-                        "warning", "danger", "#ff0000").
-                      type: string
-                    message:
-                      description: Message is the message template to send.
-                      type: string
                     status:
                       description: Status is the resource status that triggers the
                         notification (e.g., Running, Succeeded, Failed).
@@ -108,7 +101,6 @@ spec:
                       description: Title is the title template to send.
                       type: string
                   required:
-                  - message
                   - status
                   type: object
                 type: array

@@ -11,7 +11,7 @@ import (
 )
 
 type Client interface {
-	Send(ctx context.Context, webhookURL string, token string, channel string, titleTmpl string, messageTmpl string, color string, data any) error
+	Send(ctx context.Context, webhookURL string, token string, channel string, titleTmpl string, color string, fields []slack.AttachmentField, data any) error
 }
 
 type slackClient struct {
@@ -24,18 +24,7 @@ func NewClient() Client {
 	}
 }
 
-func (c *slackClient) Send(ctx context.Context, webhookURL string, token string, channel string, titleTmpl string, messageTmpl string, color string, data any) error {
-	// Render message
-	tmplMsg, err := template.New("msg").Parse(messageTmpl)
-	if err != nil {
-		return fmt.Errorf("failed to parse message template: %w", err)
-	}
-	var msgBuf bytes.Buffer
-	if err := tmplMsg.Execute(&msgBuf, data); err != nil {
-		return fmt.Errorf("failed to execute message template: %w", err)
-	}
-	message := msgBuf.String()
-
+func (c *slackClient) Send(ctx context.Context, webhookURL string, token string, channel string, titleTmpl string, color string, fields []slack.AttachmentField, data any) error {
 	// Render title
 	title := ""
 	if titleTmpl != "" {
@@ -51,14 +40,9 @@ func (c *slackClient) Send(ctx context.Context, webhookURL string, token string,
 	}
 
 	attachment := slack.Attachment{
-		Title: title,
-		Color: color, // Valid values: "good", "warning", "danger", or hex
-		Fields: []slack.AttachmentField{
-			{
-				Value: message,
-				Short: false,
-			},
-		},
+		Title:  title,
+		Color:  color, // Valid values: "good", "warning", "danger", or hex
+		Fields: fields,
 	}
 
 	// Send via Token (API)
@@ -73,7 +57,12 @@ func (c *slackClient) Send(ctx context.Context, webhookURL string, token string,
 			slack.MsgOptionAttachments(attachment),
 		}
 		// Fallback text for notifications
-		options = append(options, slack.MsgOptionText(message, false))
+		// Fallback text for notifications
+		fallbackText := "Kubernetes Notification"
+		if title != "" {
+			fallbackText = title
+		}
+		options = append(options, slack.MsgOptionText(fallbackText, false))
 
 		_, _, err := api.PostMessageContext(ctx, channel, options...)
 		if err != nil {

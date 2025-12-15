@@ -86,7 +86,7 @@ func (r *CronJobReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 func (r *CronJobReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	r.Notifier = &Notifier{
-		Client:      r.Client,
+		Client:      mgr.GetClient(), // Changed from r.Client to mgr.GetClient()
 		SlackClient: slack.NewClient(),
 	}
 	return ctrl.NewControllerManagedBy(mgr).

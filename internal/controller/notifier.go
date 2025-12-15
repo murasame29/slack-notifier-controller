@@ -4,6 +4,11 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
+
+	argov1alpha1 "github.com/argoproj/argo-workflows/v3/pkg/apis/workflow/v1alpha1"
+	goslack "github.com/slack-go/slack"
+	batchv1 "k8s.io/api/batch/v1"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -29,84 +34,79 @@ type Notifier struct {
 // Notify checks rules and sends notifications.
 // triggerObj: The object that triggered the event (e.g., Job, Workflow)
 // targetObj: The object that rules target (e.g., CronJob, CronWorkflow)
+// Notify checks rules and sends notifications.
+// triggerObj: The object that triggered the event (e.g., Job, Workflow)
+// targetObj: The object that rules target (e.g., CronJob, CronWorkflow)
 func (n *Notifier) Notify(ctx context.Context, triggerObj client.Object, targetObj client.Object, status string) error {
 	logger := log.FromContext(ctx)
 
-	// List all Rules
-	var ruleList notificationv1alpha1.SlackNotificationRuleList
-	if err := n.Client.List(ctx, &ruleList); err != nil {
-		return fmt.Errorf("failed to list notification rules: %w", err)
+	// List Rules in the target object's namespace
+	var rules notificationv1alpha1.SlackNotificationRuleList
+	if err := n.Client.List(ctx, &rules, client.InNamespace(targetObj.GetNamespace())); err != nil {
+		return fmt.Errorf("failed to list rules: %w", err)
 	}
 
-	// Filter rules that match the target object
-	var matchedRules []notificationv1alpha1.SlackNotificationRule
-	for _, rule := range ruleList.Items {
-		// Check TargetResource Kind
-		// Assuming we pass the Kind string of targetObj or verify it outside.
-		// Here we just check Selector.
-
-		// If rule specifies namespace, it must match? Usually Rules are cluster-wide or namespaced?
-		// CRD scope is Namespaced usually. So we filtered list by namespace?
-		// If List(ctx, &ruleList) is called without params, and Rule is namespaced, it returns all in namespace (if cached client used with namespaced cache) or we need to check.
-		// Let's assume Rules are in the same namespace as the Target.
-		if rule.Namespace != targetObj.GetNamespace() {
-			continue
+	for _, rule := range rules.Items {
+		// Check Target Resource
+		targetRes := rule.Spec.TargetResource
+		if targetRes == "CronJob" {
+			if _, ok := targetObj.(*batchv1.CronJob); !ok {
+				continue
+			}
+		} else if targetRes == "CronWorkflow" {
+			if _, ok := targetObj.(*argov1alpha1.CronWorkflow); !ok {
+				continue
+			}
 		}
 
+		// Check Labels
 		selector, err := metav1.LabelSelectorAsSelector(&rule.Spec.LabelSelector)
 		if err != nil {
-			logger.Error(err, "invalid label selector in rule", "rule", rule.Name)
+			logger.Error(err, "Invalid label selector", "rule", rule.Name)
 			continue
 		}
-		if selector.Matches(labels.Set(targetObj.GetLabels())) {
-			matchedRules = append(matchedRules, rule)
+		if !selector.Matches(labels.Set(targetObj.GetLabels())) {
+			continue
 		}
-	}
 
-	if len(matchedRules) == 0 {
-		return nil
-	}
-
-	// For each matched rule, check if notification is needed
-	for _, rule := range matchedRules {
-		// Check TargetResource type matches
-		// This should be passed or checked.
-		// For now we rely on the Reconciler to only call for correct types or we check Kind here if available.
-
+		// Check Notification Config
 		for _, note := range rule.Spec.Notifications {
 			if strings.EqualFold(note.Status, status) {
-				if err := n.ResolveAndSend(ctx, rule, note, triggerObj); err != nil {
-					logger.Error(err, "failed to send notification", "rule", rule.Name, "status", status)
+				if err := n.ResolveAndSend(ctx, triggerObj, targetObj, rule, note); err != nil {
+					logger.Error(err, "Failed to send notification", "rule", rule.Name)
 				}
 			}
 		}
 	}
-
 	return nil
 }
 
-func (n *Notifier) ResolveAndSend(ctx context.Context, rule notificationv1alpha1.SlackNotificationRule, note notificationv1alpha1.NotificationRule, data any) error {
+func (n *Notifier) ResolveAndSend(ctx context.Context, triggerObj client.Object, targetObj client.Object, rule notificationv1alpha1.SlackNotificationRule, note notificationv1alpha1.NotificationRule) error {
+	// Get SlackConfig
 	var config notificationv1alpha1.SlackConfig
-	if err := n.Client.Get(ctx, types.NamespacedName{Name: rule.Spec.SlackConfigRef.Name, Namespace: rule.Namespace}, &config); err != nil {
-		return fmt.Errorf("failed to get slack config: %w", err)
+	// SlackConfigRef is a LocalObjectReference, so it must be in the same namespace as the Rule
+	ns := rule.Namespace
+
+	if err := n.Client.Get(ctx, types.NamespacedName{Name: rule.Spec.SlackConfigRef.Name, Namespace: ns}, &config); err != nil {
+		return fmt.Errorf("failed to get SlackConfig: %w", err)
 	}
 
-	var webhookURL string
-	var token string
-
+	// Resolve Credentials
+	webhookURL := ""
+	token := ""
 	if config.Spec.AuthType == "Webhook" {
 		if config.Spec.WebhookURLSecretRef != nil {
-			val, err := n.getSecretValue(ctx, config.Namespace, config.Spec.WebhookURLSecretRef)
+			val, err := n.getSecretValue(ctx, ns, config.Spec.WebhookURLSecretRef)
 			if err != nil {
-				return err
+				return fmt.Errorf("failed to get webhook secret: %w", err)
 			}
 			webhookURL = val
 		}
 	} else if config.Spec.AuthType == "Token" {
 		if config.Spec.TokenSecretRef != nil {
-			val, err := n.getSecretValue(ctx, config.Namespace, config.Spec.TokenSecretRef)
+			val, err := n.getSecretValue(ctx, ns, config.Spec.TokenSecretRef)
 			if err != nil {
-				return err
+				return fmt.Errorf("failed to get token secret: %w", err)
 			}
 			token = val
 		}
@@ -118,26 +118,109 @@ func (n *Notifier) ResolveAndSend(ctx context.Context, rule notificationv1alpha1
 	}
 
 	// Convert to Unstructured map for template
-	unstructuredData, err := runtime.DefaultUnstructuredConverter.ToUnstructured(data)
+	unstructuredData, err := runtime.DefaultUnstructuredConverter.ToUnstructured(triggerObj)
 	if err != nil {
 		return fmt.Errorf("failed to convert object to unstructured: %w", err)
 	}
 
 	// Determine Color
-	color := note.Color
-	if color == "" {
-		// Default colors based on Status
-		switch strings.ToLower(note.Status) {
-		case "succeeded", "running":
-			color = "good" // Green
-		case "failed", "error":
-			color = "danger" // Red
-		default:
-			color = "warning" // Orange
-		}
+	color := "warning"
+	switch strings.ToLower(note.Status) {
+	case "succeeded", "running":
+		color = "good" // Green
+	case "failed", "error":
+		color = "danger" // Red
 	}
 
-	return n.SlackClient.Send(ctx, webhookURL, token, channel, note.Title, note.Message, color, unstructuredData)
+	fields := n.buildFields(triggerObj, targetObj, note.Status)
+	return n.SlackClient.Send(ctx, webhookURL, token, channel, note.Title, color, fields, unstructuredData)
+}
+
+func (n *Notifier) buildFields(triggerObj client.Object, targetObj client.Object, status string) []goslack.AttachmentField {
+	namespace := targetObj.GetNamespace()
+	ownerName := targetObj.GetName()
+	ownerKind := targetObj.GetObjectKind().GroupVersionKind().Kind
+
+	var duration string
+	var reason string
+	var message string
+
+	// Extract details based on Trigger Object Type
+	if job, ok := triggerObj.(*batchv1.Job); ok {
+		if job.Status.StartTime != nil {
+			endTime := metav1.Now()
+			if job.Status.CompletionTime != nil {
+				endTime = *job.Status.CompletionTime
+			} else {
+				for _, cond := range job.Status.Conditions {
+					if (cond.Type == batchv1.JobFailed || cond.Type == batchv1.JobComplete) && cond.Status == corev1.ConditionTrue {
+						endTime = cond.LastTransitionTime
+						break
+					}
+				}
+			}
+			d := endTime.Time.Sub(job.Status.StartTime.Time)
+			duration = d.Round(time.Second).String()
+		}
+
+		for _, cond := range job.Status.Conditions {
+			if cond.Type == batchv1.JobFailed && cond.Status == corev1.ConditionTrue {
+				reason = cond.Reason
+				message = cond.Message
+				break
+			}
+		}
+	} else if wf, ok := triggerObj.(*argov1alpha1.Workflow); ok {
+		if !wf.Status.StartedAt.IsZero() {
+			endTime := metav1.Now()
+			if !wf.Status.FinishedAt.IsZero() {
+				endTime = wf.Status.FinishedAt
+			}
+			d := endTime.Time.Sub(wf.Status.StartedAt.Time)
+			duration = d.Round(time.Second).String()
+		}
+		message = wf.Status.Message
+	}
+
+	fields := []goslack.AttachmentField{
+		{
+			Title: "Namespace",
+			Value: namespace,
+			Short: true,
+		},
+		{
+			Title: "Status",
+			Value: status,
+			Short: true,
+		},
+		{
+			Title: ownerKind,
+			Value: ownerName,
+			Short: true,
+		},
+		{
+			Title: "Duration",
+			Value: duration,
+			Short: true,
+		},
+	}
+
+	if reason != "" {
+		fields = append(fields, goslack.AttachmentField{
+			Title: "Reason",
+			Value: reason,
+			Short: true,
+		})
+	}
+	if message != "" {
+		fields = append(fields, goslack.AttachmentField{
+			Title: "Message",
+			Value: message,
+			Short: true,
+		})
+	}
+
+	return fields
 }
 
 func (n *Notifier) getSecretValue(ctx context.Context, namespace string, ref *corev1.SecretKeySelector) (string, error) {
